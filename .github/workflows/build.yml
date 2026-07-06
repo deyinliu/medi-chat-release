@@ -1,11 +1,13 @@
 name: Build and Release
 
 on:
-  push:
-    tags: ['v*']
-  release:
-    types: [published]
   workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（留空则自动生成 vYYYY.MM.DD-HHMM）'
+        required: false
+        type: string
+        default: ''
 
 jobs:
   # ── Cleanup old artifacts ──────────────────────────────
@@ -19,7 +21,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          ids=$(gh api repos/${{ github.repository }}/actions/artifacts --jq '.artifacts[].id')
+          ids=$(gh api --paginate repos/${{ github.repository }}/actions/artifacts --jq '.artifacts[].id')
           if [ -n "$ids" ]; then
             echo "$ids" | while read id; do
               gh api -X DELETE repos/${{ github.repository }}/actions/artifacts/$id --silent
@@ -30,29 +32,31 @@ jobs:
             echo "→ No old artifacts to delete"
           fi
 
-  # ── Determine tag & create GitHub Release ─────────────
+  # ── Determine tag & create draft GitHub Release ────────
   init-release:
     needs: cleanup
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       tag: ${{ steps.tag.outputs.TAG }}
     steps:
       - id: tag
         shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "TAG=v$(date +%Y.%m.%d)-$(date +%H%M)" >> $GITHUB_OUTPUT
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "TAG=${{ inputs.version }}" >> $GITHUB_OUTPUT
           else
-            echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+            echo "TAG=v$(date +%Y.%m.%d)-$(date +%H%M)" >> $GITHUB_OUTPUT
           fi
 
-      - name: Create release (if not exists)
+      - name: Create draft release
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         shell: bash
         run: |
-          gh release view "${{ steps.tag.outputs.TAG }}" 2>/dev/null || \
           gh release create "${{ steps.tag.outputs.TAG }}" \
+            --draft \
             --title "数据助手 ${{ steps.tag.outputs.TAG }}" \
             --notes "自动构建，macOS 双击 .dmg 安装，Windows 运行 .exe 安装。支持自动更新。"
 
@@ -163,3 +167,17 @@ jobs:
           gh release upload "${{ needs.init-release.outputs.tag }}" \
             release/*.exe release/latest.yml \
             --clobber
+
+  # ── Publish draft release after both platforms built ──
+  publish-release:
+    needs: [build-mac, build-win]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        shell: bash
+        run: |
+          gh release edit "${{ needs.init-release.outputs.tag }}" --draft=false
