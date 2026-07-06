@@ -112,9 +112,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
-          gh release upload "${{ needs.init-release.outputs.tag }}" \
-            release/*.dmg release/latest-mac.yml \
-            --clobber
+          for f in release/*.dmg release/*.dmg.blockmap release/latest-mac.yml; do
+            for i in 1 2 3; do
+              echo "→ uploading $f (attempt $i)"
+              gh release upload "${{ needs.init-release.outputs.tag }}" "$f" \
+                -R "${{ github.repository }}" --clobber && break
+              echo "  upload failed, retrying in 10s..."
+              sleep 10
+            done || { echo "FAILED to upload $f after 3 attempts"; exit 1; }
+          done
 
   # ── Windows ────────────────────────────────────────────
   build-win:
@@ -166,9 +172,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
-          gh release upload "${{ needs.init-release.outputs.tag }}" \
-            release/*.exe release/latest.yml \
-            --clobber
+          for f in release/*.exe release/latest.yml; do
+            for i in 1 2 3; do
+              echo "→ uploading $f (attempt $i)"
+              gh release upload "${{ needs.init-release.outputs.tag }}" "$f" \
+                -R "${{ github.repository }}" --clobber && break
+              echo "  upload failed, retrying in 10s..."
+              sleep 10
+            done || { echo "FAILED to upload $f after 3 attempts"; exit 1; }
+          done
 
   # ── Publish draft release after both platforms built ──
   publish-release:
