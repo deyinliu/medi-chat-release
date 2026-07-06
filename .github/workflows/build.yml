@@ -6,11 +6,6 @@ on:
   release:
     types: [published]
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Tag to build (e.g., v0.1.0)'
-        required: false
-        default: 'manual'
 
 jobs:
   # ── Cleanup old artifacts ──────────────────────────────
@@ -46,7 +41,7 @@ jobs:
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "TAG=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+            echo "TAG=v$(date +%Y.%m.%d)-$(date +%H%M)" >> $GITHUB_OUTPUT
           else
             echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
           fi
