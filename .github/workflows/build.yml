@@ -41,6 +41,8 @@ jobs:
     outputs:
       tag: ${{ steps.tag.outputs.TAG }}
     steps:
+      - uses: actions/checkout@v4
+
       - id: tag
         shell: bash
         run: |
@@ -175,6 +177,8 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
