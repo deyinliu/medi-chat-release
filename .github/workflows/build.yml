@@ -1,0 +1,170 @@
+name: Build and Release
+
+on:
+  push:
+    tags: ['v*']
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (e.g., v0.1.0)'
+        required: false
+        default: 'manual'
+
+jobs:
+  # ── Cleanup old artifacts ──────────────────────────────
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Delete old artifacts to free quota
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          ids=$(gh api repos/${{ github.repository }}/actions/artifacts --jq '.artifacts[].id')
+          if [ -n "$ids" ]; then
+            echo "$ids" | while read id; do
+              gh api -X DELETE repos/${{ github.repository }}/actions/artifacts/$id --silent
+              echo "  deleted artifact $id"
+            done
+            echo "→ All old artifacts deleted"
+          else
+            echo "→ No old artifacts to delete"
+          fi
+
+  # ── Determine tag & create GitHub Release ─────────────
+  init-release:
+    needs: cleanup
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.TAG }}
+    steps:
+      - id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "TAG=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create release (if not exists)
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        shell: bash
+        run: |
+          gh release view "${{ steps.tag.outputs.TAG }}" 2>/dev/null || \
+          gh release create "${{ steps.tag.outputs.TAG }}" \
+            --title "数据助手 ${{ steps.tag.outputs.TAG }}" \
+            --notes "自动构建，macOS 双击 .dmg 安装，Windows 运行 .exe 安装。支持自动更新。"
+
+  # ── macOS ──────────────────────────────────────────────
+  build-mac:
+    needs: [cleanup, init-release]
+    runs-on: macos-latest
+    steps:
+      - name: Clone source from private repo medi-chat
+        uses: actions/checkout@v4
+        with:
+          repository: deyinliu/medi-chat
+          token: ${{ secrets.MEDI_CHAT_TOKEN }}
+          ref: refs/tags/${{ needs.init-release.outputs.tag }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Cache Python runtime
+        uses: actions/cache@v4
+        with:
+          path: resources/python
+          key: python-mac-${{ runner.arch }}-20260623-3.12.13-v3
+
+      - name: Download macOS Python runtime
+        run: |
+          if [ -f resources/python/bin/python3 ]; then
+            echo "→ Python cache hit, skipping download"
+          else
+            TAG=20260623
+            PYTHON_VERSION=3.12.13
+            RAW=$(uname -m)
+            case "$RAW" in arm64) ARCH="aarch64" ;; *) ARCH="$RAW" ;; esac
+            URL="https://github.com/astral-sh/python-build-standalone/releases/download/${TAG}/cpython-${PYTHON_VERSION}+${TAG}-${ARCH}-apple-darwin-install_only.tar.gz"
+            curl -fSL "$URL" -o python.tar.gz
+            mkdir -p resources/python
+            tar xzf python.tar.gz -C resources/python --strip-components=1
+          fi
+          resources/python/bin/python3 -m pip install duckdb scipy statsmodels seaborn
+
+      - run: npm run build && npx electron-builder --mac --publish=never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload to GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          gh release upload "${{ needs.init-release.outputs.tag }}" \
+            release/*.dmg release/latest-mac.yml \
+            --clobber
+
+  # ── Windows ────────────────────────────────────────────
+  build-win:
+    needs: [cleanup, init-release]
+    runs-on: windows-latest
+    steps:
+      - name: Clone source from private repo medi-chat
+        uses: actions/checkout@v4
+        with:
+          repository: deyinliu/medi-chat
+          token: ${{ secrets.MEDI_CHAT_TOKEN }}
+          ref: refs/tags/${{ needs.init-release.outputs.tag }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Cache Python runtime
+        uses: actions/cache@v4
+        with:
+          path: resources/python
+          key: python-win-x64-20260623-3.12.13-v3
+
+      - name: Download Windows Python runtime
+        shell: bash
+        run: |
+          if [ -f resources/python/python.exe ]; then
+            echo "→ Python cache hit, skipping download"
+          else
+            TAG=20260623
+            PYTHON_VERSION=3.12.13
+            URL="https://github.com/astral-sh/python-build-standalone/releases/download/${TAG}/cpython-${PYTHON_VERSION}+${TAG}-x86_64-pc-windows-msvc-install_only.tar.gz"
+            curl -fSL "$URL" -o python.tar.gz
+            mkdir -p resources/python
+            tar xzf python.tar.gz -C resources/python --strip-components=1
+          fi
+          ls resources/python/python.exe
+          resources/python/python.exe -m pip install duckdb scipy statsmodels seaborn
+
+      - run: npm run build && npx electron-builder --win --publish=never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload to GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          gh release upload "${{ needs.init-release.outputs.tag }}" \
+            release/*.exe release/latest.yml \
+            --clobber
