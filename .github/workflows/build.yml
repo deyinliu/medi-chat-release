@@ -9,10 +9,15 @@ on:
         type: string
         default: ''
 
+concurrency:
+  group: release-${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   # ── Cleanup old artifacts ──────────────────────────────
   cleanup:
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     permissions:
       actions: write
     steps:
@@ -36,6 +41,7 @@ jobs:
   init-release:
     needs: cleanup
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     permissions:
       contents: write
     outputs:
@@ -57,6 +63,8 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         shell: bash
         run: |
+          # 删除已存在的同名 release（处理重跑场景）
+          gh release delete "${{ steps.tag.outputs.TAG }}" --yes --cleanup-tag 2>/dev/null || true
           gh release create "${{ steps.tag.outputs.TAG }}" \
             --draft \
             --title "数据助手 ${{ steps.tag.outputs.TAG }}" \
@@ -66,6 +74,7 @@ jobs:
   build-mac:
     needs: [cleanup, init-release]
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
       - name: Clone source from private repo medi-chat
         uses: actions/checkout@v4
@@ -112,7 +121,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
+          set -e
           for f in release/*.dmg release/*.dmg.blockmap release/latest-mac.yml; do
+            [ -f "$f" ] || { echo "→ skipping $f (not found)"; continue; }
             for i in 1 2 3; do
               echo "→ uploading $f (attempt $i)"
               gh release upload "${{ needs.init-release.outputs.tag }}" "$f" \
@@ -126,6 +137,7 @@ jobs:
   build-win:
     needs: [cleanup, init-release]
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - name: Clone source from private repo medi-chat
         uses: actions/checkout@v4
@@ -172,7 +184,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
+          set -e
           for f in release/*.exe release/latest.yml; do
+            [ -f "$f" ] || { echo "→ skipping $f (not found)"; continue; }
             for i in 1 2 3; do
               echo "→ uploading $f (attempt $i)"
               gh release upload "${{ needs.init-release.outputs.tag }}" "$f" \
@@ -186,6 +200,7 @@ jobs:
   publish-release:
     needs: [build-mac, build-win]
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     permissions:
       contents: write
     steps:
