@@ -116,7 +116,7 @@ jobs:
           fi
           resources/python/bin/python3 -m pip install duckdb scipy statsmodels seaborn
 
-      - run: npm run build && npx electron-builder --mac --publish=never
+      - run: npm run electron:build -- --publish=never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -174,7 +174,7 @@ jobs:
           ls resources/python/python.exe
           resources/python/python.exe -m pip install duckdb scipy statsmodels seaborn
 
-      - run: npm run build && npx electron-builder --win --publish=never
+      - run: npm run electron:build:win -- --publish=never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
