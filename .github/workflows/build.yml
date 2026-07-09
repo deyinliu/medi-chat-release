@@ -98,7 +98,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: resources/python
-          key: python-mac-${{ runner.arch }}-20260623-3.12.13-v3
+          key: python-mac-${{ runner.arch }}-20260623-3.12.13-v4
 
       - name: Download macOS Python runtime
         run: |
@@ -114,7 +114,14 @@ jobs:
             mkdir -p resources/python
             tar xzf python.tar.gz -C resources/python --strip-components=1
           fi
-          resources/python/bin/python3 -m pip install duckdb scipy statsmodels seaborn
+          # Isolate from host machine: pyvenv.cfg disables user site-packages,
+          # --no-user overrides any global pip config that sets user=true.
+          # This ensures all packages are installed inside resources/python/,
+          # not leaked from the CI runner's ~/.local.
+          cat > resources/python/pyvenv.cfg <<'PYEOF'
+          include-system-site-packages = false
+          PYEOF
+          resources/python/bin/python3 -m pip install --no-user duckdb scipy statsmodels seaborn
 
       - run: npm run electron:build -- --publish=never
         env:
@@ -156,7 +163,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: resources/python
-          key: python-win-x64-20260623-3.12.13-v3
+          key: python-win-x64-20260623-3.12.13-v4
 
       - name: Download Windows Python runtime
         shell: bash
@@ -172,7 +179,10 @@ jobs:
             tar xzf python.tar.gz -C resources/python --strip-components=1
           fi
           ls resources/python/python.exe
-          resources/python/python.exe -m pip install duckdb scipy statsmodels seaborn
+          # Isolate from host: pyvenv.cfg disables user site-packages,
+          # --no-user overrides any global pip config.
+          echo "include-system-site-packages = false" > resources/python/pyvenv.cfg
+          resources/python/python.exe -m pip install --no-user duckdb scipy statsmodels seaborn
 
       - run: npm run electron:build:win -- --publish=never
         env:
