@@ -121,7 +121,11 @@ jobs:
           cat > resources/python/pyvenv.cfg <<'PYEOF'
           include-system-site-packages = false
           PYEOF
-          resources/python/bin/python3 -m pip install --no-user duckdb scipy statsmodels seaborn
+          resources/python/bin/python3 -m pip install --no-user duckdb scipy statsmodels seaborn 2>/dev/null || {
+            echo "→ pip not found, bootstrapping with ensurepip..."
+            resources/python/bin/python3 -m ensurepip
+            resources/python/bin/python3 -m pip install --no-user duckdb scipy statsmodels seaborn
+          }
 
       - run: npm run electron:build -- --publish=never
         env:
@@ -182,7 +186,11 @@ jobs:
           # Isolate from host: pyvenv.cfg disables user site-packages,
           # --no-user overrides any global pip config.
           echo "include-system-site-packages = false" > resources/python/pyvenv.cfg
-          resources/python/python.exe -m pip install --no-user duckdb scipy statsmodels seaborn
+          resources/python/python.exe -m pip install --no-user duckdb scipy statsmodels seaborn 2>/dev/null || {
+            echo "→ pip not found, bootstrapping with ensurepip..."
+            resources/python/python.exe -m ensurepip
+            resources/python/python.exe -m pip install --no-user duckdb scipy statsmodels seaborn
+          }
 
       - run: npm run electron:build:win -- --publish=never
         env:
