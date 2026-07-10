@@ -167,7 +167,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: resources/python
-          key: python-win-x64-20260623-3.12.13-v4
+          key: python-win-x64-20260623-3.12.13-v5
 
       - name: Download Windows Python runtime
         shell: bash
@@ -183,9 +183,13 @@ jobs:
             tar xzf python.tar.gz -C resources/python --strip-components=1
           fi
           ls resources/python/python.exe
-          # Isolate from host: pyvenv.cfg disables user site-packages,
-          # --no-user overrides any global pip config.
-          echo "include-system-site-packages = false" > resources/python/pyvenv.cfg
+          # NOTE: Do NOT create pyvenv.cfg on Windows.
+          # On python-build-standalone for Windows, python.exe is at the root
+          # (not in bin/ like macOS). If pyvenv.cfg exists next to python.exe,
+          # site.py sets sys.prefix one level too high (Resources/ instead of
+          # Resources/python/), breaking site-packages discovery at runtime.
+          # Runtime isolation relies on the -I flag in spawn() calls instead.
+          # --no-user ensures pip installs into the bundled site-packages.
           resources/python/python.exe -m pip install --no-user duckdb scipy statsmodels seaborn 2>/dev/null || {
             echo "→ pip not found, bootstrapping with ensurepip..."
             resources/python/python.exe -m ensurepip
